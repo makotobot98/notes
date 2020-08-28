@@ -24,5 +24,5 @@ It is the slave daemon of Yarn. NM is responsible for containers monitoring thei
 One application master runs per application. It negotiates resources from the resource manager and works with the node manager. It Manages the application life cycle.
 - The AM acquires **containers** from the **RM’s Scheduler** before contacting the corresponding NMs to start the application’s individual tasks.
 - track task status, restart failed tasks
-- A **container** is a compute instance, it is led by a **application master**. On a single VM
+- A **container** is a compute instance, it is led by a **application master**. a container encapsulates CPU, disk resouces for a task to be ran
 - in summary of AM: partitioning data, request resources from RM for the application and allocate to containers acquired, monitor/failover for tasks

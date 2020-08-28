@@ -26,6 +26,7 @@ class MySerializableBean implements Writable {
 ### Partitioning & Partitioner
 ![](rsrc/mr_partitioning.png)
 - shuffle开始时会根据key的hashcode来进行分区(partition)，但是结合我们自己的业务需求(e.g., we know our range of keys are only within {apple, banana, strawberry}, in this case we prefer each of those keys handled by a seperate/dedicated reducer(s), meaning to have each key in one partition), 我们需要custome partitioner when **默认hash分区方式不能满足需求(maybe due to the hash, "apple" and "banana" were went to the same partition)**
+- If we use custome `Writable` Object, its best practice to override the `hashCode()` method since it is used by the **HashPartitioner** in Hadoop; alternatively, we can write our own **HashPartitioner**
 - It's best practice to have # of custome partitioner = # of reduce tasks(can be set in the MR Driver). each reducer will generate a output file, so n reducers will generate n output files 
   > in the {apple, banana, strawberry}, say # of partitioner is represented by p, # of reduce task by r;
   >
@@ -45,6 +46,12 @@ maptask获取属于⾃⼰的⽂件。
 
 ### Parallelism in Reducer
 - 一个ReduceTask对应一个输出文件，因为在shuffle机制中每个reduceTask拉取的都是某一个分区(Partition)的数据，**一个分区对应一个输出文件**
+- one reducer means only one machine doing all the reduce work in the end, resulted in too much load and less parallelism
+- too many reducer causing too many small output files, resulted in more pressure on HDFS system(tracking all the metadata of those small files)
+- too little reducer causing the slowing down of the entire pipeline
+> 得出reducer数： `reducer_num = MIN(total_input_size /reducers.bytes.per.reducer, reducers.max)`
+> 
+> **即： min(输入总数据量 / 256M, 1009)**
 
 ## Shuffle
 the data processing after the map() in MapTask and before the reduce() in Reduce Task is the shuffle process(环形缓冲数据分区->溢出合并->copy to reducer memory -> memory/disk merge -> sort by keygroup) 
@@ -57,10 +64,30 @@ The goal for `Combiner` if to reduce the network IO during the shuffle, so it do
 
 ## Sort in MapReduce
 - quick sort in mapper task, and final merge sort during the reduce task
+### WritableComparable vs Custom Comparartor
+- we implement WritableComparable when we want to use our own Key-Value objects that are different from those provided `primitive Writable`. During which we need to provide `compareTo` implementation, and when this `WritableComparable` Object is used as a Key in MapReduce, it will have to be **desrialized** into an object for the `compareTo()` method to be invoked. (this could be problematic for the performance due the fact that during the shuffle (both map side and reduce side) we experience many disk IO and have to deserialize into obejcts in order to compare) recall: ***序列化主要是我们通过⽹络通信传输数据时或者把对象持久化到⽂件，需要把对象序列化成⼆进制的结
+构。***
+- Implementing a custom `RawComparator` allows to compare two Key Objects just by looking at their serialized representation (meaning we directly compare the bytes of keys and do the comparison, so no object creation is involved)
 
 
+## Compression
+- Compression is good for: save disk space; reduce the network load, faster transfer through the network during the shuffle
+- In MapReduce, when considering using different compression scheme, we have to consider several things:
+  - if compression is splitable: this will affect the parallelism of mappers, if compression file is not splitable, meaning only one mapper need to do all the work
+  - schema trade offs between: compression speed; decompression speed; compression throughput; compression efficiency(how many percent can be compressed)
+  ![](rsrc/mr_compression.png)
+- Where in MapReduce to use compression?(By default, MR does not use compression during MR jobs)
+> 1. Mapper input: 此处使⽤压缩⽂件作为Map的输⼊数据，⽆需显示指定编解码⽅式，Hadoop会⾃动检查⽂件扩展名，如果压缩⽅式能够匹配，Hadoop就会选择合适的编解码⽅式对⽂件进⾏压缩和解压。
+> 2. Map output: Shuffle是Hadoop MR过程中资源消耗最多的阶段，如果有数据量过⼤造成⽹络传输速度缓慢，可以考虑使⽤压缩
+> 3. Reducer output: 输出的结果数据使⽤压缩能够减少存储的数据量，降低所需磁盘的空间，并且作为第⼆个MR的输⼊时可以复⽤压缩
+- How to configure compression in MR Job?
+> 1. 在驱动代码中通过Configuration直接设置使⽤的压缩⽅式，可以开启Map输出和Reduce输出压缩(so configuration only applies to this map reduce job)
+> 2. 配置mapred-site.xml(修改后分发到集群其它节点，重启Hadoop集群),此种⽅式对运⾏在集群的所有MR任务都会执⾏压缩。(this configuration applies to all map reduce jobs as long as they ran in this cluster)
 
-
-
-#### homework
+## homework
 链接:https://pan.baidu.com/s/1yhTzZUxeCcsl9LA6LnyWsg  密码:7zpl
+
+
+## Q
+- **Do i serialize records every time before spill to disk?** 序列化主要是我们通过⽹络通信传输数据时或者把对象持久化到⽂件，需要把对象序列化成⼆进制的结
+构。

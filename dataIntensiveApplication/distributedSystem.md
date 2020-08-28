@@ -49,7 +49,9 @@ two operation r1 and r2 are **causally dependent** if r2's input is related to t
 - Linearizable storage can be implemented using total order broadcast(pg350); total order broadcast can be implemented using linearizable storage(pg351)
   > this essentially means a linearizable compare-and-set register(accross the cluster) and total order broadcast are both equivalent, and equivalent to **consensus**. Meaning if we can solve one of those, we can transform it into the solution for the others
 
-
+### Lamport Timestamp & version vectors(Logical clocks vs vector clocks)
+- Lamort Timestamp ensures the total order, but it does not ensure the total order finalization accross distributed nodes. Total order broadcast is a mechanism ensures such finalization
+- version vectors is an extension of lamport timestamp, it also captures the whether two operations are concurrent or whether one is **causally dependent** on the other, whereas Lamport timestamp enforce a total ordering(from total ordering, we cannot tell if two operations are concurrent or they are causally dependent).
 
 
 
