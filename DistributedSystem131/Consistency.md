@@ -12,4 +12,22 @@
 - Entry Consistency: consistency model built on top of `grouping operators`(distributed locking, synchronization mechanism)
 - Eventual Consistency
 
+## Cache Coherence
+### Cache State Protocol
+- MSI, MESI, MOESI
+### Mechanisms
+- Snooping
+- Directory-based
+
+
+## Client centric consistency
+- monotonic read
+- monotonic write
+- read-your-write consistency
+- write-follow-read consistency
+
+
+# Q
+- monotonic write & monotonic read
+
 
