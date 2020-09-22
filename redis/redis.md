@@ -4,7 +4,7 @@
 
 ## Snapshot(RDB)
 - memory might be overwhelmed if data is too big(tens of gigabytes) since snapshot makes heavy uses of memory (which may cause heavy use of virtual memory, and degrade the performance)
-- data may go out of sync due to the snapshot time configuration(if snapshot period is set to longs)
+- data may go out of sync due to the snapshot time configuration(if snapshot period is set too long)
 
 ## AOF
 - real time appending to disk(where when to flush is determined by OS, recall the writeFileSync() means to block the process(redis) until the write on disk is successful), can usually set sync period be 1 sec. (**Do not set `appendfsync always` which write every change to disk as they happen** due to write amplification from continuously writing small amounts of data to the end of a file)
