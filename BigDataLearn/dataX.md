@@ -1,0 +1,2 @@
+- **离线数据**同步工具/平台，实现包括 MySQL、Oracle、SqlServer、Postgre、HDFS、Hive、ADS、HBase、TableStore(OTS)、MaxCompute(ODPS)、DRDS 等各种异构数据源之间高效的数据同步功能。
+  > comparing to **Flume**, Flume is real time, synchronous data collecting
