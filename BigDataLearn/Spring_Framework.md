@@ -53,10 +53,21 @@
 - instead of using xml to describe a bean wiring, **we can move the bean configuration into the component class itself by using annotations** on the relevant class, method, or field declaration.
 - need to enable `<context:annotation-config/>` in the xml file in order to use Annotation Based Configuration
 1. [`@Required`](https://www.tutorialspoint.com/spring/spring_required_annotation.htm)
-2. [`@AutoWired`](https://www.tutorialspoint.com/spring/spring_autowired_annotation.htm): [example link](https://examples.javacodegeeks.com/enterprise-java/spring/beans-spring/spring-autowire-example/)
-    1. on setters - same as `ByName`
+2. [`@AutoWired`](https://www.tutorialspoint.com/spring/spring_autowired_annotation.htm): [example link](https://examples.javacodegeeks.com/enterprise-java/spring/beans-spring/spring-autowire-example/), [a better explanation](https://howtodoinjava.com/spring-core/spring-beans-autowiring-concepts/)
+    
+    1. on setters - same as `ByType` autowiring, which look for a bean with class type matches, NOT match for bean id
+    
     2. on property - same as `ByType`
+    
     3. on constructor - same as `ByConstructor`
+    
+       > [setters vs property autowire annotation:](https://stackoverflow.com/questions/33562731/spring-autowire-property-vs-setter)
+       >
+       >  
+       >
+       > If you use `@Autowired` annotation *on a **property***, spring will initiate the property using spring.xml. You don't need setter in this case.
+       >
+       > If you use `@Autowired` annotation *on a **setter***, you are specifying to spring that it should initiate this property using this setter method where you can **add your custom code, like *initializing some other property with this property***.
 3. `@Qualifier`: There may be a situation when you create **more than one bean of the same type(different bean id but with the same class)** and want to wire only one of them with a property
 
 ### [**Java-based configuration**](https://www.tutorialspoint.com/spring/spring_java_based_configuration.htm)
@@ -437,7 +448,9 @@ Java-based configuration option enables you to **write most of your Spring confi
 
 - **web components** provide the dynamic extension capabilities for a web server. Web components are either Java servlets, JSP pages, or web service endpoints.
 
-  ![image-20201022225311486](C:\Users\13354\projects\notes\rsrc\spring_java_web_comp)
+  > In the following flow diagram, the http request from client is converted into an `HttpServletRequest` object and passed into the Web Components(e.g., a corresponding servlet), when processing is finished, components return an `HttpServletReponse` back to the server and server makes the http response
+
+  ![image-20201022225311486](rsrc\spring_java_web_comp)
 
 - Java Web Application dev cycle
 
@@ -529,4 +542,8 @@ Recall that your application can notify web context and session listener objects
 
   > GlassFish, Tomcat, Jetty
 
-  
+
+
+
+# MyBatis
+

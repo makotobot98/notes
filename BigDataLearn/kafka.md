@@ -3,7 +3,7 @@
 - support publish/subscribe & point to point communication
 - Kafka manages messages in `topics`, a topic may have multiple partition, each partition may be replicated, each partition under a topic has its own log file(kafka is essentially a log-structured based message broker)
 
-# Achitecture
+# Architecture
 - Kafka的数据单元称为消息。
 可以把消息看成是数据库里的一个“数据行”或一条“记录”。消息由字节 数组组成。消息有键(key)，键也是一个字节数组。当消息以一种可控的方式写入不同的分区时，会用到键。 为了提高效率，消息被分批写入Kafka。**批次(batch)** 就是一组消息，这些消息属于同一个主题和分区。 把消息分成批次可以减少网络开销。批次越大，单位时间内处理的消息就越多，单个消息的传输时 间就越长。批次数据会被压缩，这样可以提升数据的传输和存储能力，但是需要更多的计算处理。
 ## Components
@@ -13,25 +13,26 @@
 - a designated broker work as a connector coordinating the kafka cluster
 ### Topic
 ### Partitions
-- a topic may be partitioned and furthured replicated
-- within a single partition messages are ordered with monotonic increasing id, orders will not be able to be guaranteed accross different partition for the same topic
+- a topic may be partitioned and replicated
+- within a single partition messages are ordered with monotonic increasing id, orders will not be able to be guaranteed across different partition for the same topic
 - ways for publisher to publish messages；
   1. directly specify which partition
-  2. based on the hash of keys (recommanded if care order, messages with same key goes in same partition and order is preserved)
-  3. round robin (careful about the order may not be preserverd)
+  2. based on the hash of keys (recommended if care order, messages with same key goes in same partition and order is preserved)
+  3. round robin (careful about the order may not be preserved)
 - within the partition each message is assigned with an increasing id. both consumer and publisher track their current offset.
-  > if a consumer crashed at partition p with its offset i, consumers in the same `consumer group` will come to continue consume the message with offset i. other consumer learned this offset by 
-  refering to the shared **zookeeper** file system
+  > if a consumer crashed at partition p with its offset i, consumers **in the same `consumer group`** will come to continue consume the message with offset i. other consumer can learn this offset by referring to the shared **zookeeper** file system or an internal kafka topic(this approach is better, since ZK is not good at high concurrent writes of offsets)
 ### Controller
 - a designated broker will be a controller of the kafka cluster, upon node failures controller will elect the ISR to be the new leader(if the failed node contains leader replication)
 - **Controller failure**: controller configuration is tracked using `ephemeral node` and `watcher` in **zookeeper** (in `kafkaDir/controller`);Also controllers uses monotonic increasing `epoch` id(in `kafkaDir/controllerEpoch`) to prevent split brain upon controller failure
 - How does Controller know the failure of brokers in the cluster? using zookeeper for cluster configuration
+  
   > all nodes write their `broker id` in `kafkaDir/brokers/ids` as `ephemeral nodes`, and controller put a `watcher` on `kafkaDir/brokers/ids` and will be notified for any incoming/disconnected broker, and uppon new configuration, `controller` can get the new/leaving broker's info at `kafkaDir/brokers/topics`
-### Replciation
+### Replication
 replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
 - Leader and Follow uses HW and LEO as mechanisms to track which messages are guaranteed to be replicated accross all replications(on those ISR, not including OSR) [this is tracked using `HW`], and which messages are only replicated in leader and some but not all ISR replications [tracked using `LEO`]; Those messages that are marked by `HW` will be visible to consumers, and those between `HW` and `LEO` will not since they are not yet replicated
   - **LEO(log end offset)**: 即日志末端位移(log end offset)，记录了该副本日志中下一条消息的位移值。如果LEO=10，那么表示该副本保存了10条消息，位移值范围是[0, 9]。另外，Leader LEOFollower LEO的更新是有区别的。
   - **HW(high watermark)**: 即上面提到的水位值。对于同一个副本对象而言，其HW值不会大于LEO值。小于等于HW值的所有消息都被认为是“已备份”的（replicated）。Leader副本和Follower副本的HW更新不同。
+    
     > there are still some consistency problem may occur using LEO/HW upon node failures, so it was introduced `leader epoch` in newer version of kafka to handle consistency in case of node failure
 ### Broker
 - a broker is an abstraction of a single kafka server(a physical server); 
@@ -40,6 +41,7 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
 ### subscriber
 ### publisher
 - `bootstrap.server`: a parameter required when a publisher wants to send a message. the publisher node will try to bootstrap a broker server, and then from that server it will discover the address of other broker in the same cluster
+  
   > it is recommanded to have multiple bootstrap servers, in case one that fails the publisher is able to bootstrap other running servers
 - typically use `Avro`(binary encoding) as serializer/desirializer for schema evolution, storage optimzation. 
 
@@ -70,6 +72,7 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
   - **zookeeper** as offset sotrage: consumers update their consume offset in zk file system, not recommanded, since zookeeper is not fit for high concurrent write
   - **kafka topic `_consumer_offsets`** as offset storage: recommanded
 - **consumer group** allows the flow of consuming messsage to be horizontally scalable by adding more consumers in a consumer group;
+  
   > **Partition** allows for publishing message to be horizontally scalable
 - messaging consumption in kafka is poll based; Even though message queue like RabbitMQ provided push based (low latency, real time), kafka is poll based which reduced the load of broker, and makes the process of consuming message horizontally scalable
   > - **pros of poll-based messaging**: scalability(since add consumer scale the system)
@@ -81,6 +84,7 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
 1. **auto commit**: commit in for each preset time interval t. this approach amplifies the possibility for reconsuming messages
 2. **sync commit(同步提交)**: block the process until successfully commit an offset: reduced performance for consumer, but more guarantee on updating the consumer offset and thus minimize chances to repeatedly consume same messages
 3. **async commit(异步提交)**: high performance, but cannot guarantee retry on failure of commit
+    
     > can combine sync & async commit: keep async commit until exceptions are raised, and when exception is raised, switch to sync commit
 
 ### Rebalancing(再平衡)
@@ -102,6 +106,7 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
 ## Handling Failure
 ### Replication failure
 - when leader fails, one of the ISR(in-sync replication) will be elected; heartbeats of replication broker are tracked within **zookeeper**; No leader election happened upon failure to increase the system performance(ISR will just became the leader)
+  
   > 总结： Kafka中Leader分区选举，通过维护一个动态变化的ISR集合来实现，一旦Leader分区丢掉，则从ISR中随机挑选一个副本做新的Leader分区。
 
 
