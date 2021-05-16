@@ -22,8 +22,15 @@
 - within the partition each message is assigned with an increasing id. both consumer and publisher track their current offset.
   > if a consumer crashed at partition p with its offset i, consumers **in the same `consumer group`** will come to continue consume the message with offset i. other consumer can learn this offset by referring to the shared **zookeeper** file system or an internal kafka topic(this approach is better, since ZK is not good at high concurrent writes of offsets)
 ### Controller
-- a designated broker will be a controller of the kafka cluster, upon node failures controller will elect the ISR to be the new leader(if the failed node contains leader replication)
-- **Controller failure**: controller configuration is tracked using `ephemeral node` and `watcher` in **zookeeper** (in `kafkaDir/controller`);Also controllers uses monotonic increasing `epoch` id(in `kafkaDir/controllerEpoch`) to prevent split brain upon controller failure
+- a designated broker will be a controller of the kafka cluster, 
+
+- Controller Responsibility: manage broker cluster membership
+
+  - Partition Leader Re-election: upon node failures controller will elect the ISR to be the new leader(if the failed node contains leader replication)
+  - Detecting Brokers join/leave the cluster.
+
+- **Controller failure**: controller configuration is tracked using `ephemeral node` and `watcher` in **zookeeper** (in `kafkaDir/controller`); Also controllers uses monotonic increasing `epoch` id(in `kafkaDir/controllerEpoch`) to prevent split brain upon controller failure
+
 - How does Controller know the failure of brokers in the cluster? using zookeeper for cluster configuration
   
   > all nodes write their `broker id` in `kafkaDir/brokers/ids` as `ephemeral nodes`, and controller put a `watcher` on `kafkaDir/brokers/ids` and will be notified for any incoming/disconnected broker, and uppon new configuration, `controller` can get the new/leaving broker's info at `kafkaDir/brokers/topics`
@@ -36,7 +43,7 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
     > there are still some consistency problem may occur using LEO/HW upon node failures, so it was introduced `leader epoch` in newer version of kafka to handle consistency in case of node failure
 ### Broker
 - a broker is an abstraction of a single kafka server(a physical server); 
-- a broker contains multiple partition under different topics(and it has no point to store same partition(replication) on same broker); if a broker b contains the primary replica of partition p1 under topic t1, then b i.s.t.b the t1's partition p1 **leader**; a broker main contain both leader and follower partitions
+- a broker contains multiple partition under different topics(and it has no point to store same partition(replication) on same broker); if a broker b contains the primary replica of partition p1 under topic t1, then b i.s.t.b the t1's partition p1 **leader**; a broker may contain both leader and follower partitions
 - 一个独立的Kafka服务器称为broker。broker接收来自生产者的消息，为消息设置偏移量，并提交消息到磁盘保存。broker为消费者提供服务，对读取分区的请求做出响应，返回已经提交到磁盘上的消 息。单个broker可以轻松处理数千个分区以及每秒百万级的消息量。
 ### subscriber
 ### publisher
@@ -56,29 +63,30 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
 - serve as a middleware between publisher and broker, messages in interceptors can be modified(modify header, correct some error e.g.)
 - Interceptor can intercept the message in two ways: **on message send**, and **on message acknowledgement** (e.g, on ack, we can persist the ack info into db)
 - allow multiple Interceptors
-### Partitioner
-- based on the hash value of key, assign a parititon to the record
-- type of partitioner
-  1. user specified partitioner id
+### Practitioner
+- based on the hash value of key, assign a partitionto the record
+- type of practitioner
+  1. user specified practitioner id
   2. based on hash of key
-  3. round robin partitioner (default if no key provided)
-- can customize the partitioner
+  3. round robin practitioner (default if no key provided)
+- can customize the practitioner
 ### Serializer
-- usually use Avro, can customize a serializer for custome object type.
+- usually use Avro, can customize a serializer for custom object type.
 
 ## Consuming(Poll) messages
 - consumer is the abstraction that poll the message from the broker, consumer can be grouped in **consumer groups**, a consumer group evenly distribute messages to its consumers, **for each partition, only one consumer in the consumer group will consume that message**
 - consumers track their consume offset, so in case of failure, other consumers in the same group can continue consume messages from that offset
-  - **zookeeper** as offset sotrage: consumers update their consume offset in zk file system, not recommanded, since zookeeper is not fit for high concurrent write
-  - **kafka topic `_consumer_offsets`** as offset storage: recommanded
-- **consumer group** allows the flow of consuming messsage to be horizontally scalable by adding more consumers in a consumer group;
+  - **zookeeper** as offset storage: consumers update their consume offset in zk file system, not recommended, since zookeeper is not fit for high concurrent write
+  - **kafka topic `_consumer_offsets`** as offset storage: recommended
+- **consumer group** allows the flow of consuming message to be horizontally scalable by adding more consumers in a consumer group;
   
   > **Partition** allows for publishing message to be horizontally scalable
-- messaging consumption in kafka is poll based; Even though message queue like RabbitMQ provided push based (low latency, real time), kafka is poll based which reduced the load of broker, and makes the process of consuming message horizontally scalable
+- messaging consumption in kafka is **poll based**; Even though message queue like RabbitMQ provided push based (low latency, real time), kafka is poll based which reduced the load of broker, and makes the process of consuming message horizontally scalable
   > - **pros of poll-based messaging**: scalability(since add consumer scale the system)
   > - **cons of poll-based messaging**: latency(bounded by the poll interval)
 ### Consume a message multiple times
-- recall that each consumer will track its consumer offset towards each of the partition under a subscribed topic; consumer offset will be tracked and updated each time it finishes consuming a message. Consumer does the update by commiting the consumer id (commit to zk or kafka topic depends on the choice). It is possible for a consumer that after consuming a message and before commiting the consumer offset, a failure or rebalance takes place, and when consumer comes back **it will reconsume that message due to the consumer offset for that message is not yet commited**
+- recall that each consumer will track its consumer offset towards each of the partition under a subscribed topic; consumer offset will be tracked and updated each time it finishes consuming a message. Consumer does the update by committing the consumer id (commit to zk or kafka topic depends on the choice). It is possible for a consumer that after consuming a message and before committing the consumer offset, a failure or rebalance takes place, and when consumer comes back **it will re-consume that message due to the consumer offset for that message is not yet committed**
+- A lot of time depends on the application, the idea of "consuming" a message might be different. For a spark steaming application as a downstream consumer, spark application is done consuming when it has processed that message into its workflow rather than when the spark application confirmed receiving the kafka message. Thus a lot of time it is up to the application's duty to "commit" the offset to ensure the message is not missed. (although, situations where we consume the same message multiple times will still occur, but it is better than missing a message)
 
 #### there are three ways for committing the consumer offset:
 1. **auto commit**: commit in for each preset time interval t. this approach amplifies the possibility for reconsuming messages
