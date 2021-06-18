@@ -9,21 +9,82 @@
 - session seperation (session in server, so redis can serve as a session for the application server)
 - message queue
 
-## General Distribute cache read/write mode(缓存读写模式)
+# Caching Write Strategy
+
 ### Cache aside pattern (Look aside cache)
-![](rsrc/redis_cache_aside.png)
-#### pros
+<img src="rsrc/redis_cache_aside.png" style="zoom: 50%;" />
 
-#### cons
-- **possible dirty writes** (consider a read request after updating DB but not data in cache has not been deleted, read will resolve into a stale value)
+pros
 
-### Read/Write through pattern
-- read-through cache: when client performs read on the cache and cache does not have data, cache will first fetch the data from database then update its own copy
-- write-through: updates are performed directly on the cache, afterwards cache will write to the database
-  - this pattern causes the cache to be coupled with the application logic, harder for software evolution
+- easy to implement, cache is not coupled to the database (easier software evolution)
+
+cons
+
+- Each cache miss results in three trips, which can cause a noticeable delay.
+-  Data can **become stale** if it is updated in the database. (consider a read request after updating DB but not data in cache has not been deleted, read will resolve into a stale value)
+- When a node fails, it is replaced by a new, empty node, increasing latency.
+
+### Write through pattern
+- write-through: updates are performed directly on the cache, afterwards **cache will write to the database**
+
+  > <img src="rsrc/redis/0vBc0hN.png" alt="img" style="zoom: 67%;" />
+  >
+  > Application code:
+  >
+  > ```
+  > set_user(12345, {"foo":"bar"})
+  > ```
+  >
+  > Cache code:
+  >
+  > ```
+  > def set_user(user_id, values):
+  >     user = db.query("UPDATE Users WHERE id = {0}", user_id, values)
+  >     cache.set(user_id, user)
+  > ```
+
+  - Pros:
+
+    1.  Data in the cache is not stale.
+    2. Write-through is a slow overall operation due to the write operation, but subsequent reads of just written data are fast. Users are generally more tolerant of latency when updating data than reading data.
+
+  - Cons:
+
+    1. Write-through is a slow overall operation due to the write operation (this is resolved in Write Behind Cache)
+
+    2. When a new node is created due to failure or scaling, the new node will not cache entries until the entry is updated in the database. **Cache-aside in conjunction with write through can mitigate this issue.**
+
+       > This combination is called read/write through cache: when client performs read on the cache and cache does not have data, **cache will first fetch the data from database** then update its own copy
+
+    3. Most data written might never be read, which can be minimized with a TTL.
+
+    4. this pattern causes the cache to be coupled with the application logic, harder for software evolution
 ### Write Behind Cache Pattern
-- client update the cache on write, and cache will **asynchronously** (and perhaps in batch) update the database
-- problem with this pattern is that possible data loss and data consistency, but highly performant
+
+> <img src="rsrc/redis/rgSrvjG.png" alt="img" style="zoom:67%;" />
+
+- client update the cache on write, and cache will **asynchronously** (and perhaps in batch) update the database improving write performance
+- Pros:
+  1. improving client perceived write performance
+- Cons:
+  1. possible data loss if the cache node crashes prior to its contents hitting the data store
+  2. It is more complex to implement write-behind than it is to implement cache-aside or write-through.
+
+### Refresh Ahead
+
+> ![img](rsrc/redis/kxtjqgE.png)
+
+You can configure the cache to automatically refresh any recently accessed cache entry prior to its expiration.
+
+- Pros:
+
+  1. Refresh-ahead can result in reduced latency vs read-through if the cache can accurately predict which items are likely to be needed in the future.
+
+- Cons:
+
+  1. might be some stale data (depending on the expiration)
+
+  2. Not accurately predicting which items are likely to be needed in the future can result in reduced performance than without refresh-ahead.
 
 
 # Data Types
@@ -87,6 +148,7 @@
 
 ## [Sentinel](https://redis.io/topics/sentinel)
 - a cluster of sentinel nodes will elect new leader upon leader failure. Sentinel cluster will track the health of the cluster
+- Purpose of Sentinel: Sentinel不断的检查master和slave是否正常的运行
 - [CNBlog](https://www.cnblogs.com/williamjie/p/9505782.html)
 ### Mechanism
 - communication between sentinel nodes: using `publish-subscribe` in Redis, each sentinel publish to channel `sentinel:hello` every 2s informing its port,ip,...etc metadata. 
@@ -204,7 +266,7 @@
   }
   ```
   > 问题在于如果调用jedis.del()方法的时候，这把锁已经不属于当前客户端的时候会解除他人加的锁。
-那么是否真的有这种场景？答案是肯定的，比如客户端A加锁，一段时间之后客户端A解锁，在执行jedis.del()之前，锁突然过期了，此时客户端B尝试加锁成功，然后客户端A再执行del()方法，则将客户端B的锁给解除了。
+  那么是否真的有这种场景？答案是肯定的，比如客户端A加锁，一段时间之后客户端A解锁，在执行jedis.del()之前，锁突然过期了，此时客户端B尝试加锁成功，然后客户端A再执行del()方法，则将客户端B的锁给解除了。
 
 - method 2: using atomic operation to do get & delete in one step
   ```java
@@ -274,9 +336,8 @@ Redis 是最流行的 NoSQL 数据库解决方案之一，但 Redis 并没有对
 
 ### 重入锁(Java ReentrantLock)
 - 重用锁指的是同一个线程可以多次acquire the same lock, and to release a lock, it must release n times if it has acquired n times
-  
 > Why do we need ReentrantLock? mostly for application convinience; 重入进一步提升了加锁行为的封装性，因而简化了面向对象并发代码的开发。在以下程序中，子类改写了父类的 synchronized 方法，然后调用父类中的方法，此时如果内置锁不是可重入的，那么这段代码将产生死锁。由于 Widget 和 LoggingWidget 中 doSomething 方法都是 synchronized 方法，因此每个每个 doSomething 方法在执行前都会获取 Widget 上的锁。然而如果内置锁不是可重入的，那么调用 super.doSomething( )时无法获得 Widget 上的锁，因为这个锁已经被持有，从而线程将永远停顿下去，等待一个永远也无法获得的锁。**重入则避免了这种死锁情况的发生**。
-  
+
 - https://www.cnblogs.com/AnXinliang/p/10019389.html
 # Tips
 
@@ -361,7 +422,76 @@ setRedis(Key，value，time + Math.random() * 10000);
 
 # Q
 - so Lua scripts cannot guarantee atomicity? meaning partial results can still occur upon failure/error that interrupt the execution
-  
 > Yes, https://www.secpulse.com/archives/78350.html; Both Lua and Redis Transaction cannot guarantee to rollback the partial writes upon failure
-  
+
 - How does Redis guarantee only one server executes the Lua while others will not(refering `no other script or Redis command will be executed while a script is being executed`)? is there a synchonization mechanism deployed?
+
+
+
+# Redis Practice
+
+- Using `List`, we can simulate a **task queue** using blocking pop operator `BLPOP/LRPOP`
+
+## Task Queue
+
+> 让生产者使用lpush 命令加入到某个键中，另一个消费者不断使用rpop从该键中取出任务;伪代码：
+>
+> ```bash
+> loop
+>     $task = RPOP queue
+>     if $task
+>         execute($task)  # 有就执行
+>     else
+>         wait 1 second ## 等待1 秒
+> ```
+>
+> **可以使用*BRPOP*命令来优化上面的代码。**
+>
+> BRPOP 和 RPOP 相似，区别是当列表中没有元素的时候， BRPOP 会一直阻塞住连接，直到有新元素加入
+>
+> ```bash
+> loop
+>     $task = BRPOP  queue ,0
+>     execute($task)
+> ```
+>
+> BRPOP 接受2个参数，第一个是键名，第二个是超时时间，单位是秒。当超过时间仍没有新元素就返回nil;0表示不限制等待时间，没有新元素就一直阻塞。
+>
+> ```bash
+> redis A > BRPOP queue 0
+> redis B > LPUSH queue task
+> ```
+>
+> **优先级队列**
+>
+> BRPOP 可以监听多个键。完整的命令格式为`BRPOP key [key...] timeout`.如果所有键都没有值则阻塞，如果多个键都有元素则按照*从左到右*的顺序取*第一个键中的一个元素*。利用优先级队列，我们实现将优先消费哪个队列中的任务：
+>
+> ```bash
+> loop
+>     $task = BRPOP queue:confirmation.email,
+>             queue:notifaication.email,
+>             0
+>     execute($task)
+> ```
+
+## Shared Session Storage
+
+> 要用  session  + redis 共享session的原因：
+>
+> 先进的企业级或者大型的网站平台，都是分布式结构，分布式的好处是通过nginx分发请求，让多个服务器各自处理请求，来减少单一服务器的压力，并且提高执行效率。
+>
+> 在这个分布式结构下，如果不用共享session的话，就会出现问题。当一个客户端发送一个请求（无session），通过nginx将第一次请求分发给服务器1，服务器判断无session，就让那个客户进行登录操作，并得到响应，此时客户端会存储一个来自服务器1响应的session，并存储在客户端。
+>
+> 当客户端发送第二次请求的时候，此时本次请求已经携带了session（跳过登录），nginx却将请求分发给服务器2，因为服务器2中没有session，所以无法与客户端session进行对应。所以程序会出现异常或是报错，无法正常响应。
+>
+>  ![img](rsrc/redis/20190614095113789.png)
+>
+> 解决方法 ： session  +  redis 实现session 共享
+>
+>   session  +  redis 实现session 共享原理：
+>
+> 为了避免上面session 在服务器直接不共享的问题，就将 session 放入 redis 中。
+>
+> 当客户端第一次发送请求后，nginx将请求分发给服务器1 ，然后将服务器1 产生的session 放入redis中，这样的话 客户端、服务器1 和redis中都会有一个相同的session，当客户端发送第二次请求的时候，nginx将请求分发给服务器2 （已知服务器2 中无session），因为客户端自己携带了一个session，那么服务器2 就可以拿着客户端带来的session中的session ID去redis中获取session，只要拿到这个session，就能执行之后的操作。
+>
+> ![img](rsrc/redis/20190614100409637.png)

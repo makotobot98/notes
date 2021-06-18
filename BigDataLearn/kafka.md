@@ -20,6 +20,7 @@
   2. based on the hash of keys (recommended if care order, messages with same key goes in same partition and order is preserved)
   3. round robin (careful about the order may not be preserved)
 - within the partition each message is assigned with an increasing id. both consumer and publisher track their current offset.
+  
   > if a consumer crashed at partition p with its offset i, consumers **in the same `consumer group`** will come to continue consume the message with offset i. other consumer can learn this offset by referring to the shared **zookeeper** file system or an internal kafka topic(this approach is better, since ZK is not good at high concurrent writes of offsets)
 ### Controller
 - a designated broker will be a controller of the kafka cluster, 
@@ -92,7 +93,7 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
 1. **auto commit**: commit in for each preset time interval t. this approach amplifies the possibility for reconsuming messages
 2. **sync commit(同步提交)**: block the process until successfully commit an offset: reduced performance for consumer, but more guarantee on updating the consumer offset and thus minimize chances to repeatedly consume same messages
 3. **async commit(异步提交)**: high performance, but cannot guarantee retry on failure of commit
-    
+   
     > can combine sync & async commit: keep async commit until exceptions are raised, and when exception is raised, switch to sync commit
 
 ### Rebalancing(再平衡)
@@ -117,8 +118,29 @@ replication mode includes ISR(In-Sync Replica) and OSR(Out-Sync Replica)
   
   > 总结： Kafka中Leader分区选举，通过维护一个动态变化的ISR集合来实现，一旦Leader分区丢掉，则从ISR中随机挑选一个副本做新的Leader分区。
 
-
 ## [Transactions](https://www.confluent.io/blog/transactions-apache-kafka/)
+
+# Kafka Practices
+
+- [How to choose number of partitions?](https://www.confluent.io/blog/how-choose-number-topics-partitions-kafka-cluster/)
+
+  - can be many. Although each partition maps to a file handler on the disk, but some benchmarks shows there are 30k partitions running on 1 node. Too many partitions might cause unavailability, since if a node fail, if that node holds x # of leader partition, then all of those partition became unavailable for a small amount of time (which adds up by # of leader partitions), so there can be some latency before leader partition is recovered/reselected
+
+  - So what about number of topics? There is no hard maximum but there are several limitations you will hit. Both limitations are actually in the number of partitions not in the number of topics, so a single topic with 100k partitions would be effectively the same as 100k topics with one partition each.
+
+    > How many topics can be created in Kafka? Because I want to have a messaging system using kafka with each user being a topic/partition.
+    >
+    > Alex's answer is correct. There is no hard maximum but there are several limitations you will hit. Both limitations are actually in the number of partitions not in the number of topics, so a single topic with 100k partitions would be effectively the same as 100k topics with one partition each.
+    >
+    > The first limitation is that each partition is physically represented as a directory of one or more segment files. So you will have at least one directory and several files per partition. Depending on your operating system and filesystem this will eventually become painful. However this is a per-node limit and is easily avoided by just adding more total nodes in the cluster.
+    >
+    > The second limitation is Zookeeper which is used for per-partition configuration information and leadership elections. Zookeeper is basically a non-sharded in-memory database, and it will eventually be exhausted.
+    >
+    > However in practice neither of these should ever become an issue. Virtually every time I have talked with someone doing this the reason is that they would like to have a topic for each user on a website and use the topic for live serving (e.g. a request from their website would read from Kafka). I believe what these people are really looking for is key-value store with range-scans like Cassandra.
+    >
+    > If you are actually using Kafka as a log or messaging system you should not need millions of topics or partitions. The number of partitions should scale only with the number of consuming machines not with any characteristic of the data. The recommended approach is to have a single topic and partition it by user_id, this will give you locality and order by user. In other words you get a stronger ordering guarantee than you would if you had one topic per user and it is vastly more efficient.
+    >
+    > - **Also note: You cannot delete partitions in a topic**. Apache Kafka doesn't support decreasing the partition number. You can't just delete a partition because that would lead to data loss and also the remaining data's keys would not be distributed correctly so new messages would not get directed to the same partitions as old existing messages with the same key.
 
 # Q
 1. for replication: does replica handle any read request on behalf of master?

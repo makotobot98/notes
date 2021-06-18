@@ -3,7 +3,7 @@
 ## IOC
 - **dependency injection**(or **Inversion of control**) is the idea of creating the dependencies for an object externally(inject), the dependencies will be passed to constructor(or setter) instead of manually initializing the dependency within the constructor. Spring container is used to handle those dependencies while user only need to specify it in xml(or annotation)
     - [What is  Inversion of Control](https://stackoverflow.com/questions/3058/what-is-inversion-of-control)
-    - [Spring dependency Injection](https://www.tutorialspoint.com/spring/spring_dependency_injection.htm)
+    - [Spring dependency Injection - TutorialSpoint](https://www.tutorialspoint.com/spring/spring_dependency_injection.htm)
 ## Spring Bean
 - The objects that form the backbone of your application and that are managed by the Spring IoC container are called **beans**
 - A bean is an object that is instantiated, assembled, and otherwise managed by a **Spring IoC container**(usually we use **`ApplicationContext` Container**)
@@ -54,7 +54,7 @@
 - need to enable `<context:annotation-config/>` in the xml file in order to use Annotation Based Configuration
 1. [`@Required`](https://www.tutorialspoint.com/spring/spring_required_annotation.htm)
 2. [`@AutoWired`](https://www.tutorialspoint.com/spring/spring_autowired_annotation.htm): [example link](https://examples.javacodegeeks.com/enterprise-java/spring/beans-spring/spring-autowire-example/), [a better explanation](https://howtodoinjava.com/spring-core/spring-beans-autowiring-concepts/)
-    
+   
     1. on setters - same as `ByType` autowiring, which look for a bean with class type matches, NOT match for bean id
     
     2. on property - same as `ByType`
@@ -71,9 +71,12 @@
 3. `@Qualifier`: There may be a situation when you create **more than one bean of the same type(different bean id but with the same class)** and want to wire only one of them with a property
 
 ### [**Java-based configuration**](https://www.tutorialspoint.com/spring/spring_java_based_configuration.htm)
+
 Java-based configuration option enables you to **write most of your Spring configuration without XML** but with the help of few Java-based annotations explained in this chapter.
 
 - Annotating a class with the `@Configuration` indicates that the class can be used by the Spring IoC container as a source of bean definitions
+
+- `@Service, @Component, @Repository` stereotype annotations: [link](https://www.baeldung.com/spring-component-repository-service)
 
 - The `@Bean` annotation tells Spring that a method annotated with `@Bean` will return an object that should be registered as a bean in the Spring application context. 
 
@@ -440,9 +443,76 @@ Java-based configuration option enables you to **write most of your Spring confi
 
 ## [Spring MVC](https://www.tutorialspoint.com/spring/spring_web_mvc_framework.htm)
 
+- [Spring mvc intro blog - good refresher](https://spring.io/blog/2011/01/04/green-beans-getting-started-with-spring-mvc/)
+
+Spring MVC includes most of the same basic concepts as other so-called web MVC frameworks. Incoming requests enter the framework via a *Front Controller*. In the case of Spring MVC, this is an actual Java Servlet called `DispatcherServlet`. Think of `DispatcherServlet` as the gatekeeper. It doesn’t perform any real web or business logic, but rather delegates to POJOs called *Controllers* where the real work is done (either in whole or via the back-end). When the work has been done, it’s the responsibility of *Views* to produce the output in the proper format (whether that’s a JSP page, Velocity template, or JSON response). *Strategies* are used to decide which Controller (and which method(s) inside that Controller) handles the request, and which View renders the response. The Spring container is used to wire together all these pieces. It all looks something like this:
+
+![image-20210525210243377](rsrc/Spring_Framework/image-20210525210243377.png)
+
+As mentioned, all incoming requests flow through a `DispatcherServlet`. Like any other Servlet in a Java EE application, we tell the Java EE container to load this Servlet at web app startup time via an in the web app’s `WEB-INF/web.xml`. The `DispatcherServlet` is also responsible for loading a Spring `ApplicationContext` that is used to perform wiring and dependency injection of managed component. On this basis, we specify some init parameters to the Servlet which configure the Application Context. Let’s look at the config in `web.xml`:
+
+```xml
+<!-- Processes application requests -->
+<!-- Configuring DispatcherServlet named appServlet, configure where to find such init file-->
+<servlet>
+    <servlet-name>appServlet</servlet-name>
+    <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+    <init-param>
+        <!-- We use the ContextConfigLocation init parameter to customize the location for the base configuration XML file for the Spring Application Context that is loaded by the DispatcherServlet, instead of relying on the default location of <servletname>-context.xml).-->
+       <param-name>contextConfigLocation</param-name>
+       <param-value>/WEB-INF/spring/appServlet/servlet-context.xml</param-value>
+    </init-param>
+    <load-on-startup>1</load-on-startup>
+</servlet>
+
+<listener>
+    <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class> 
+</listener>
+
+<!-- We map this Servlet to handle incoming requests (relative to the app path) starting with “/” -->
+<servlet-mapping>
+    <servlet-name>appServlet</servlet-name>
+    <url-pattern>/</url-pattern>
+</servlet-mapping>
+```
+
+- `ContextLoaderListener`: Upon initialization of `DispatcherServlet`, the framework will try to load the application context from a file named `[servlet-name]-servlet.xml`, if we do not want to go with default filename as `[servlet-name]-servlet.xml` and default location as `WebContent/WEB-INF`. you can customize this file name and location by adding the servlet listener `ContextLoaderListener`
 
 
 
+Here is a minimal Spring Application Context definition file: `WEB-INF/spring/appServlet/servlet-context.xml`
+
+```xml
+<!-- DispatcherServlet Context: defines this servlet's request-processing infrastructure -->
+
+<!-- Scans within the base package of the application for @Components to configure as beans -->
+<!-- @Controller, @Service, @Configuration, etc. -->
+<context:component-scan base-package="xyz.sample.baremvc" />
+
+<!-- Enables the Spring MVC @Controller programming model -->
+<mvc:annotation-driven />
+
+<!-- convert strings that controllers returned into a view file path -->
+<bean class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <!--前缀-->
+        <property name="prefix" value="/WEB-INF/view/"/>
+        <!--后缀-->
+        <property name="suffix" value=".jsp"/>
+</bean>
+```
+
+
+
+- The `<context:component-scan>` declaration ensures the Spring container does component scanning, so that any code annotated with `@Component` subtypes such as `@Controller` is automatically discovered. You’ll note that for efficiency, we limit (to `xyz.sample.baremvc` in this case) what part of the package space Spring should scan in the classpath
+- The `<mvc:annotation-driven>` declaration sets up Spring MVC’s support for routing requests to @Controllers, as well as how some things like conversion, formatting and validation are handled (with some sensible defaults based on what (libraries) is present in your classpath, and the ability to override if needed)
+- `InternalResourceViewResolver`: takes the view name returned by the controller, and prepends it with an optional prefix (empty by default), and appends it with an optional suffix (empty by default), then feeds that resultant path to a `JstlView` it creates. The `JstlView` then delegates to the Servlet engine’s `RequestDispatcher` to do the real work, i.e. rendering the template. Therefore, to allow the controller to return logical view names like `home` instead of specific view template paths like `WEB-INF/views/home.jsp`
+
+
+
+### Spring MVC showcase
+
+- [conference](https://www.infoq.com/presentations/Mastering-Spring-MVC-3/)
+  - [github](https://github.com/spring-projects/spring-mvc-showcase)
 
 # [Java Web Application](https://docs.oracle.com/javaee/5/tutorial/doc/geysj.html)
 
